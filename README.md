@@ -3,7 +3,7 @@
 ## Descrição
 O **Ligeirinho** é um jogo de reflexo desenvolvido como parte do projeto **Embarcatech**, um programa de capacitação profissional técnica destinado a alunos de nível superior em Tecnologias da Informação e Comunicação (TIC) e áreas correlatas, com foco em tecnologias de Sistemas Embarcados. 
 
-Este projeto utiliza a placa **BitDogLab**, que é baseada no microcontrolador **RP2040** da Raspberry Pi Pico W. O objetivo do jogo é medir o tempo de reação do jogador, que deve pressionar um botão assim que um LED acender. O projeto foi desenvolvido em linguagem **C** e utiliza componentes como LEDs, botões, um buzzer e um display OLED para fornecer feedback visual e sonoro ao jogador.
+Este projeto utiliza a placa **BitDogLab**, que é baseada no microcontrolador **RP2040** da Raspberry Pi Pico W. O objetivo do jogo é medir o tempo de reação do jogador, que deve pressionar um botão assim que um LED acender. O projeto foi desenvolvido em linguagem **C** com a SDK 2.1.0 Raspberry Pi e utiliza componentes como LEDs, botões, um buzzer e um display OLED para fornecer feedback visual e sonoro ao jogador.
 
 ## Materiais Necessários
 - Placa BitDogLab (com microcontrolador RP2040)
