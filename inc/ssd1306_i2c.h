@@ -9,8 +9,7 @@
 #define ssd1306_width 128 // Define a largura do display (128 pixels)
 
 #define ssd1306_i2c_address _u(0x3C) // Define o endereço do i2c do display
-
-#define ssd1306_i2c_clock 400 // Define o tempo do clock (pode ser aumentado)
+#define ssd1306_i2c_clock 400        // Define o tempo do clock (pode ser aumentado)
 
 // Comandos de configuração (endereços)
 #define ssd1306_set_memory_mode _u(0x20)
@@ -47,18 +46,20 @@
 #define ssd1306_write_mode _u(0xFE)
 #define ssd1306_read_mode _u(0xFF)
 
-struct render_area {
-    uint8_t start_column;
-    uint8_t end_column;
-    uint8_t start_page;
-    uint8_t end_page;
+struct render_area
+{
+  uint8_t start_column;
+  uint8_t end_column;
+  uint8_t start_page;
+  uint8_t end_page;
 
-    int buffer_length;
+  int buffer_length;
 };
 
-typedef struct {
+typedef struct
+{
   uint8_t width, height, pages, address;
-  i2c_inst_t * i2c_port;
+  i2c_inst_t *i2c_port;
   bool external_vcc;
   uint8_t *ram_buffer;
   size_t bufsize;

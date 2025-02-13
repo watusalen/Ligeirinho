@@ -29,10 +29,7 @@ project(Ligeirinho C CXX ASM)
 pico_sdk_init()
 
 # Adiciona o arquivo-fonte correto
-add_executable(Ligeirinho 
-    Ligeirinho.c
-    inc/ssd1306_i2c.c
-    )
+add_executable(Ligeirinho Ligeirinho.c inc/ssd1306_i2c.c)
 
 # Define o nome e a versão do programa
 pico_set_program_name(Ligeirinho "Ligeirinho")
