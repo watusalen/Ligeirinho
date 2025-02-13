@@ -28,6 +28,17 @@ Este projeto utiliza a placa **BitDogLab**, que é baseada no microcontrolador *
 | I2C SDA (OLED)      | GP14                        |
 | I2C SCL (OLED)      | GP15                        |
 
+### Configuração do CMakeLists.txt
+
+```cmake
+# Adiciona o arquivo-fonte correto
+add_executable(Ligeirinho Ligeirinho.c inc/ssd1306_i2c.c) // Você (obrigatoriamente) deve mudar o arquivo executável caso seja diferente do meu.
+
+# Adiciona bibliotecas necessárias
+target_link_libraries(Ligeirinho pico_stdlib hardware_timer hardware_pwm hardware_clocks hardware_i2c) 
+```
+
+
 # Explicação do Código
 1. O código começa configurando os pinos GPIO, inicializando a comunicação I2C para o display OLED e configurando o PWM para o buzzer.
 2. Os botões são lidos para detectar quando o jogador inicia o jogo ou marca o tempo de reação.
