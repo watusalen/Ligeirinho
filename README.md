@@ -8,11 +8,6 @@ Este projeto utiliza a placa **BitDogLab**, que é baseada no microcontrolador *
 ## Materiais Necessários
 - Placa BitDogLab (com microcontrolador RP2040)
 - Fonte de alimentação (USB ou bateria)
-- Botões
-- LEDs (verde e vermelho)
-- Buzzer
-- Display OLED
-- Jumpers e protoboard
 
 ## Esquemático de Conexões com a BitDogLab
 
