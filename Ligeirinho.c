@@ -1,3 +1,22 @@
+/**
+ * @file buzzer_pwm1.c
+ * @brief Firmware para o jogo de reflexo "Ligeirinho" utilizando a placa BitDogLab.
+ *
+ * Este firmware mede o tempo de reação do jogador. O jogo inicia quando o botão A
+ * (conectado ao GPIO5) é pressionado e, em seguida, aguarda um tempo aleatório para
+ * acionar o LED (controlado via PWM com 50% de duty cycle) e emitir um som com o buzzer
+ * (via PWM no GPIO21). O jogador deve pressionar o botão B (GPIO6) para capturar seu tempo de
+ * reação. O display OLED exibe mensagens de status.
+ *
+ * Melhorias implementadas:
+ *  - O acionamento dos LEDs (LED_GREEN e LED_RED) agora é feito via PWM com duty cycle fixo de 50%,
+ *    reduzindo seu brilho para metade do valor máximo.
+ *  - O buzzer continua operando via PWM conforme implementado originalmente.
+ *
+ * @author
+ * @date 06/12/2024 (Atualizado para controle PWM dos LEDs)
+ */
+
 #include <stdio.h>           // Biblioteca padrão de entrada e saída
 #include <stdlib.h>          // Biblioteca para manipulação de memória e funções rand()
 #include <string.h>          // Biblioteca para manipulação de strings
@@ -12,25 +31,31 @@
 // Definição dos pinos utilizados no projeto
 #define BUTTON_START 5 // Botão A - Inicia o jogo
 #define BUTTON_STOP 6  // Botão B - Captura o tempo de reação
-#define LED_GREEN 11   // LED Verde - Indica preparação
-#define LED_RED 13     // LED Vermelho - Indica reação
+#define LED_GREEN 11   // LED Verde - Indica preparação (via PWM)
+#define LED_RED 13     // LED Vermelho - Indica reação (via PWM)
 #define BUZZER 21      // Buzzer para emitir som ao acionar o LED vermelho
 #define I2C_SDA 14     // Pino SDA para o display OLED
 #define I2C_SCL 15     // Pino SCL para o display OLED
 
+// Definição dos parâmetros para o PWM dos LEDs
+#define LED_PWM_WRAP 1000         /**< Valor de wrap do PWM para os LEDs (define o período) */
+#define LED_ON (LED_PWM_WRAP / 8) /**< Nível de PWM para 50% do duty cycle (LED aceso com brilho reduzido) */
+
 // Variáveis globais para controle do jogo
-bool game_running = false;                  // Indica se o jogo está em execução
-bool reaction_phase = false;                // Indica se o jogador deve reagir
-absolute_time_t start_time, reaction_time;  // Armazena os tempos de início e reação
-volatile bool buzzer_active = false;        // Indica se o buzzer está ativo
-volatile bool false_start_detected = false; // Indica se houve uma queima de largada
-volatile bool button_b_pressed = false;     // Indica se o botão B foi pressionado
+bool game_running = false;                  /**< Indica se o jogo está em execução */
+bool reaction_phase = false;                /**< Indica se o jogador deve reagir */
+absolute_time_t start_time, reaction_time;  /**< Armazena os tempos de início e de reação */
+volatile bool buzzer_active = false;        /**< Indica se o buzzer está ativo */
+volatile bool false_start_detected = false; /**< Indica se houve uma queima de largada */
+volatile bool button_b_pressed = false;     /**< Indica se o botão B foi pressionado */
 
 /**
- * Exibe um texto no display OLED, quebrando linhas automaticamente.
- * Cada linha comporta até 15 caracteres.
+ * @brief Exibe um texto no display OLED, quebrando linhas automaticamente.
  *
- * @param text Mensagem a ser exibida no display
+ * Cada linha comporta até 15 caracteres. Essa função utiliza as funções da
+ * biblioteca ssd1306 para desenhar strings e renderizar o conteúdo no display.
+ *
+ * @param text Mensagem a ser exibida no display.
  */
 void display_text(const char *text)
 {
@@ -63,24 +88,49 @@ void display_text(const char *text)
 }
 
 /**
- * Inicializa o PWM no pino do buzzer.
+ * @brief Inicializa o PWM no pino do buzzer.
  *
- * @param pin Pino do buzzer
+ * Configura o pino especificado para funcionar como saída PWM, define
+ * o divisor de clock e inicializa o PWM com duty cycle 0.
+ *
+ * @param pin Pino do buzzer.
  */
 void pwm_init_buzzer(uint pin)
 {
     gpio_set_function(pin, GPIO_FUNC_PWM);
     uint slice_num = pwm_gpio_to_slice_num(pin);
     pwm_config config = pwm_get_default_config();
-    pwm_config_set_clkdiv(&config, 4.0f);
+    pwm_config_set_clkdiv(&config, 4.0f); // Ajusta divisor de clock
     pwm_init(slice_num, &config, true);
-    pwm_set_gpio_level(pin, 0);
+    pwm_set_gpio_level(pin, 0); // Desliga o PWM inicialmente
 }
 
 /**
- * Callback chamado para desligar o buzzer após um tempo determinado.
+ * @brief Inicializa o PWM para controle de um LED.
  *
- * @return Retorna 0 (sem efeito sobre o sistema de alarmes)
+ * Configura o pino especificado para funcionar como saída PWM, define
+ * um período fixo (wrap) e deixa o LED inicialmente desligado.
+ *
+ * @param pin Pino do LED.
+ */
+void pwm_init_led(uint pin)
+{
+    gpio_set_function(pin, GPIO_FUNC_PWM);
+    uint slice_num = pwm_gpio_to_slice_num(pin);
+    pwm_config config = pwm_get_default_config();
+    pwm_init(slice_num, &config, true);
+    pwm_set_wrap(slice_num, LED_PWM_WRAP);
+    pwm_set_gpio_level(pin, 0); // LED desligado inicialmente
+}
+
+/**
+ * @brief Callback chamado para desligar o buzzer após um tempo determinado.
+ *
+ * Esta função é chamada pelo sistema de alarmes para interromper o som no buzzer.
+ *
+ * @param id Identificador do alarme (não utilizado)
+ * @param user_data Ponteiro para dados do usuário (não utilizado)
+ * @return int64_t 0, para indicar que não há necessidade de reiniciar o alarme.
  */
 int64_t stop_buzzer(alarm_id_t id, void *user_data)
 {
@@ -90,10 +140,12 @@ int64_t stop_buzzer(alarm_id_t id, void *user_data)
 }
 
 /**
- * Emite um som curto no buzzer para alertar o jogador.
+ * @brief Emite um som curto no buzzer para alertar o jogador.
  *
- * @param frequency Frequência do som (Hz)
- * @param duration_ms Duração do som (ms)
+ * Configura o PWM do buzzer para gerar uma nota com 50% de duty cycle por um tempo determinado.
+ *
+ * @param frequency Frequência da nota (Hz)
+ * @param duration_ms Duração da nota (ms)
  */
 void buzzer_beep(uint frequency, uint duration_ms)
 {
@@ -105,14 +157,14 @@ void buzzer_beep(uint frequency, uint duration_ms)
     uint32_t top = clock_freq / frequency - 1;
 
     pwm_set_wrap(slice_num, top);
-    pwm_set_gpio_level(BUZZER, top / 2);
+    pwm_set_gpio_level(BUZZER, top / 2); // 50% de duty cycle
     buzzer_active = true;
 
     add_alarm_in_ms(duration_ms, stop_buzzer, NULL, false);
 }
 
 /**
- * Inicia o temporizador do jogo, marcando o tempo inicial.
+ * @brief Inicia o temporizador do jogo, marcando o tempo inicial.
  */
 void start_timer()
 {
@@ -120,9 +172,11 @@ void start_timer()
 }
 
 /**
- * Calcula o tempo de reação do jogador.
+ * @brief Calcula o tempo de reação do jogador.
  *
- * @return Tempo decorrido em milissegundos
+ * Compara o tempo de início com o tempo em que o jogador pressionou o botão de parada.
+ *
+ * @return uint32_t Tempo decorrido em milissegundos.
  */
 uint32_t get_elapsed_time()
 {
@@ -130,10 +184,13 @@ uint32_t get_elapsed_time()
 }
 
 /**
- * Função de debouncing para os botões, evitando leituras múltiplas rápidas.
+ * @brief Função de debouncing para os botões.
  *
- * @param gpio Pino do botão a ser verificado
- * @return Retorna true se o botão foi pressionado, false caso contrário
+ * Impede que leituras múltiplas rápidas sejam interpretadas como várias pressões.
+ *
+ * @param gpio Pino do botão a ser verificado.
+ * @return true Se o botão foi pressionado.
+ * @return false Caso contrário.
  */
 bool debounce_button(uint gpio)
 {
@@ -150,7 +207,10 @@ bool debounce_button(uint gpio)
 }
 
 /**
- * Inicia uma nova rodada do jogo.
+ * @brief Inicia uma nova rodada do jogo.
+ *
+ * Configura o estado inicial do jogo, atualiza o display e controla os LEDs e buzzer
+ * para sinalizar a preparação e o início da fase de reação.
  */
 void start_game()
 {
@@ -162,7 +222,8 @@ void start_game()
         button_b_pressed = false;
         display_text("PREPARAR...!");
 
-        gpio_put(LED_GREEN, 1);
+        // Liga o LED verde com PWM (50% brightness)
+        pwm_set_gpio_level(LED_GREEN, LED_ON);
 
         uint delay_ms = 1000 + (rand() % 4000);
         for (uint i = 0; i < delay_ms / 10; i++)
@@ -178,12 +239,14 @@ void start_game()
         if (false_start_detected)
         {
             display_text("MUITO CEDO!");
-            gpio_put(LED_GREEN, 0);
+            // Desliga o LED verde
+            pwm_set_gpio_level(LED_GREEN, 0);
+            // Pisca o LED vermelho três vezes (50% brightness)
             for (int j = 0; j < 3; j++)
             {
-                gpio_put(LED_RED, 1);
+                pwm_set_gpio_level(LED_RED, LED_ON);
                 sleep_ms(200);
-                gpio_put(LED_RED, 0);
+                pwm_set_gpio_level(LED_RED, 0);
                 sleep_ms(200);
             }
             game_running = false;
@@ -193,8 +256,11 @@ void start_game()
             return;
         }
 
-        gpio_put(LED_GREEN, 0);
-        gpio_put(LED_RED, 1);
+        // Desliga o LED verde e liga o LED vermelho com PWM
+        pwm_set_gpio_level(LED_GREEN, 0);
+        pwm_set_gpio_level(LED_RED, LED_ON);
+
+        // Emite um beep curto com o buzzer
         buzzer_beep(3000, 300);
         start_timer();
         reaction_phase = true;
@@ -203,7 +269,13 @@ void start_game()
 }
 
 /**
- * Callback de interrupção para o botão de parada (B).
+ * @brief Callback de interrupção para o botão de parada (B).
+ *
+ * Quando o botão B é pressionado, e se o jogo estiver em andamento e na fase de reação,
+ * marca o tempo de reação.
+ *
+ * @param gpio Pino que gerou a interrupção.
+ * @param events Máscara dos eventos que ocorreram.
  */
 void gpio_callback(uint gpio, uint32_t events)
 {
@@ -214,19 +286,34 @@ void gpio_callback(uint gpio, uint32_t events)
     }
 }
 
+/**
+ * @brief Função principal.
+ *
+ * Inicializa o hardware (I2C, display OLED, botões, LEDs e PWM para buzzer e LEDs),
+ * e entra em loop infinito monitorando os botões para iniciar e controlar o jogo.
+ *
+ * Os LEDs agora são acionados via PWM, garantindo que mesmo quando "ligados" o brilho seja
+ * limitado a 50% do máximo.
+ *
+ * @return int 0 ao término (embora o loop seja infinito).
+ */
 int main()
 {
+    // Inicializa as interfaces padrão (UART, USB, etc.)
     stdio_init_all();
 
+    // Inicializa a interface I2C para o display OLED
     i2c_init(i2c1, ssd1306_i2c_clock * 1000);
     gpio_set_function(I2C_SDA, GPIO_FUNC_I2C);
     gpio_set_function(I2C_SCL, GPIO_FUNC_I2C);
     gpio_pull_up(I2C_SDA);
     gpio_pull_up(I2C_SCL);
 
+    // Inicializa o display OLED e exibe mensagem inicial
     ssd1306_init();
     display_text("PRESSIONE A    PARA COMECAR!");
 
+    // Configura os botões como entradas com pull-up interno
     gpio_init(BUTTON_START);
     gpio_init(BUTTON_STOP);
     gpio_set_dir(BUTTON_START, GPIO_IN);
@@ -234,19 +321,23 @@ int main()
     gpio_pull_up(BUTTON_START);
     gpio_pull_up(BUTTON_STOP);
 
-    gpio_init(LED_GREEN);
-    gpio_init(LED_RED);
-    gpio_set_dir(LED_GREEN, GPIO_OUT);
-    gpio_set_dir(LED_RED, GPIO_OUT);
-    gpio_put(LED_GREEN, 0);
-    gpio_put(LED_RED, 0);
+    // Inicializa os LEDs para PWM
+    pwm_init_led(LED_GREEN);
+    pwm_init_led(LED_RED);
+    // Inicialmente, ambos os LEDs estão desligados
+    pwm_set_gpio_level(LED_GREEN, 0);
+    pwm_set_gpio_level(LED_RED, 0);
 
+    // Inicializa o buzzer com PWM
     pwm_init_buzzer(BUZZER);
 
+    // Configura a interrupção para o botão B (BUTTON_STOP)
     gpio_set_irq_enabled_with_callback(BUTTON_STOP, GPIO_IRQ_EDGE_FALL, true, &gpio_callback);
 
+    // Loop principal do jogo
     while (true)
     {
+        // Verifica se o botão A foi pressionado com debounce
         if (debounce_button(BUTTON_START))
         {
             if (!game_running)
@@ -256,10 +347,12 @@ int main()
             sleep_ms(300);
         }
 
+        // Se o jogo estiver em execução e o botão B foi pressionado
         if (game_running && reaction_phase && button_b_pressed)
         {
             uint32_t elapsed_time = get_elapsed_time();
-            gpio_put(LED_RED, 0);
+            // Desliga o LED vermelho via PWM
+            pwm_set_gpio_level(LED_RED, 0);
 
             stop_buzzer(0, NULL);
 
@@ -269,6 +362,7 @@ int main()
 
             sleep_ms(5000);
 
+            // Reseta o estado do jogo
             game_running = false;
             reaction_phase = false;
             false_start_detected = false;
@@ -277,4 +371,6 @@ int main()
             display_text("PRESSIONE A    PARA COMECAR!");
         }
     }
+
+    return 0;
 }
